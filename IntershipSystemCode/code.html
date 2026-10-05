@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css" />
+  <link rel="stylesheet" href="https://cdn.datatables.net/fixedcolumns/4.0.2/css/fixedColumns.dataTables.min.css" />
+  <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/fixedcolumns/4.0.2/js/dataTables.fixedColumns.min.js"></script>
+  <script src="https://www.gstatic.com/charts/loader.js"></script>
+
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
+    .full-container {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+    .filter-container {
+      display: none;
+      margin-bottom: 10px;
+    }
+    .custom-filter {
+      font-size: 1.2em;
+      padding: 5px;
+      display: inline-block;
+      margin: 0 5px;
+    }
+    .returnButton {
+      padding: 10px 20px;
+      font-size: 1em;
+      background-color: #f8f9fa;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      cursor: pointer;
+      margin: 0 5px;
+    }
+    .returnButtonContainer {
+      display: flex;
+      justify-content: center;
+      margin-top: 10px;
+    }
+    #selectedDataInfo {
+      display: none;
+      text-align: center;
+      margin-top: 20px;
+      font-size: 1.2em;
+      font-weight: bold;
+    }
+    #demo {
+      margin-top: 30px;
+    }
+    .red-font {
+      color: red !important;
+    }
+    .practice-table th, .practice-table td {
+      text-align: center;
+    }
+    @media (max-width: 600px) {
+      .custom-filter, .practice-table th, .practice-table td, .returnButton, body, button, select {
+        font-size: 0.8em;
+      }
+    }
+    #myTable.practice-table tbody tr:hover {
+      transform: scale(1.05);
+      transition: transform 0.3s ease-in-out;
+      background-color: #f2f2f2;
+    }
+    .fixed-column {
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: white;
+    }
+    .scroll-cell {
+      max-width: 100px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .narrow-column {
+      max-width: 0px;
+      width: 0px;
+    }
+    @media screen and (min-width: 601px) {
+      div.dataTables_wrapper div.dataTables_paginate {
+        text-align: right !important;
+        float: none !important;
+        margin-top: 10px;
+        margin-right: 460px;
+      }
+    }
+    #pageSelector {
+      margin-left: 5px;
+      margin-right: 5px;
+    }
+  </style>
+
+  <script>
+    google.charts.load('current', {'packages':['corechart']});
+    google.charts.setOnLoadCallback(init);
+
+    let currentSheet = '實習';
+    let savedPage = 0;
+    let savedSearchTerm = '';
+    let isReturning = false;
+    let table;
+
+    function init() {
+      $('#chefTypeFilter').on('change', function() {
+        savedSearchTerm = '';
+        savedPage = 0;
+        loadSheetData(currentSheet, this.value, $('#regionFilter').val());
+      });
+      $('#regionFilter').on('change', function() {
+        savedSearchTerm = '';
+        savedPage = 0;
+        loadSheetData(currentSheet, $('#chefTypeFilter').val(), this.value);
+      });
+      loadSheetData(currentSheet);
+    }
+
+    function loadSheetData(sheetName, filterValue = '', regionValue = '') {
+      let queryString = 'select *';
+      let conditions = [];
+      if (sheetName === '實習') {
+        if (filterValue) conditions.push(`(C contains '${filterValue}')`);
+        if (regionValue) conditions.push(`D = '${regionValue}'`);
+        queryString = conditions.length > 0 ? `select * where ${conditions.join(' and ')}` : 'select *';
+      } else if (sheetName === '單位各資料' && filterValue) {
+        queryString = `select * where A = '${filterValue}'`;
+      }
+      const url = 'https://docs.google.com/spreadsheets/d/1TlMB2dOuMhgJe7bBgdeecD3AjfhvgE2QF4ZzpLDAYu8/gviz/tq?headers=1&sheet=' + sheetName + '&tq=' + encodeURIComponent(queryString);
+      const query = new google.visualization.Query(url);
+      query.setQuery(queryString);
+      query.send(response => processSheetsData(response, sheetName, filterValue));
+    }
+
+    function processSheetsData(response, sheetName, filterValue) {
+      const data = response.getDataTable();
+      let str = `<table id="myTable" class="display nowrap ${sheetName === '實習' ? 'practice-table' : ''}" style="width:100%"><thead><tr>`;
+      for (let c = 0; c < data.getNumberOfColumns(); c++) {
+        let cellClass = (c === 1) ? 'fixed-column' : '';
+        if (sheetName === '單位各資料' && c === 1) cellClass += ' narrow-column';
+        str += `<th class="${cellClass}">${data.getColumnLabel(c)}</th>`;
+      }
+      str += '</tr></thead><tbody>';
+      for (let r = 0; r < data.getNumberOfRows(); r++) {
+        if (!data.getFormattedValue(r, 0).trim()) continue;
+        let rowStr = '<tr>', rowNotEmpty = false;
+        for (let c = 0; c < data.getNumberOfColumns(); c++) {
+          let cellValue = data.getFormattedValue(r, c) || '';
+          let cellClass = (c === 1) ? 'fixed-column' : (c === 8) ? 'red-font' : (c === 2 && sheetName === '單位各資料') ? 'scroll-cell' : '';
+          if (sheetName === '單位各資料' && c === 1) cellClass += ' narrow-column';
+          if (c === 8 && cellValue.trim()) cellClass += ' red-font';
+          if (sheetName === '單位各資料' && !cellValue.trim()) {
+            cellValue = '該用戶無任何心得';
+          } else if (cellValue.trim()) {
+            rowNotEmpty = true;
+          }
+          rowStr += `<td class="${cellClass}">${cellValue}</td>`;
+        }
+        rowStr += '</tr>';
+        if (sheetName === '單位各資料' || rowNotEmpty) str += rowStr;
+      }
+      str += '</tbody></table>';
+      if (sheetName === '單位各資料') str += `<div class="returnButtonContainer"><button class="returnButton" onclick="returnToPractice()">返回</button></div>`;
+      document.getElementById("demo").innerHTML = str;
+      initializeDataTable(sheetName, filterValue);
+    }
+
+    function initializeDataTable(sheetName, filterValue) {
+      $(document).ready(function () {
+        let columnDefs = [], searchingEnabled = true;
+        let isReturningFromDetail = isReturning && sheetName === '實習';
+
+        if (sheetName === '實習') {
+          columnDefs = [{ targets: 0, orderable: true }, { targets: '_all', orderable: false }, { targets: [2, 3], visible: false }];
+          $('.filter-container').show(); $('.returnButtonContainer').hide(); $('#selectedDataInfo').hide();
+        } else {
+          columnDefs = [{ targets: '_all', orderable: false }, { targets: [0], visible: false }, { targets: [1], className: 'fixed-column narrow-column' }, { targets: [2], className: 'scroll-cell' }];
+          $('.filter-container').hide(); $('.returnButtonContainer').show(); $('#selectedDataInfo').text(filterValue).show();
+          if (sheetName === '單位各資料') searchingEnabled = false;
+        }
+
+        table = $('#myTable').DataTable({
+          scrollX: true,
+          scrollCollapse: true,
+          paging: true,
+          pagingType: "simple",
+          pageLength: 10,
+          lengthChange: false,
+          searching: searchingEnabled,
+          fixedColumns: { leftColumns: 2 },
+          columnDefs: columnDefs,
+          order: [[0, 'desc']],
+          language: { url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/zh-HANT.json' },
+          drawCallback: function () {
+            const info = table.page.info();
+            const $paginateContainer = $('#myTable_paginate');
+            const $prevBtn = $('<button class="returnButton">上一頁</button>').on('click', () => {
+              if (info.page > 0) table.page(info.page - 1).draw(false);
+            });
+            const $select = $('<select id="pageSelector" class="custom-filter"></select>');
+            for (let i = 0; i < info.pages; i++) {
+              $select.append(`<option value="${i}" ${i === info.page ? 'selected' : ''}>第 ${i + 1} 頁</option>`);
+            }
+            $select.on('change', function () {
+              table.page(parseInt($(this).val(), 10)).draw(false);
+            });
+            const $nextBtn = $('<button class="returnButton">下一頁</button>').on('click', () => {
+              if (info.page < info.pages - 1) table.page(info.page + 1).draw(false);
+            });
+            $paginateContainer.empty().append($prevBtn).append($select).append($nextBtn);
+          },
+          initComplete: function () {
+            if (isReturningFromDetail) {
+              table.search(savedSearchTerm).draw();
+              table.page(savedPage).draw(false);
+              isReturning = false;
+            }
+          }
+        });
+
+        $('#myTable tbody').on('click', 'tr', function () {
+          const rowData = table.row(this).data();
+          if (currentSheet === '實習' && rowData[1].trim()) {
+            savedSearchTerm = table.search();
+            savedPage = table.page();
+            currentSheet = '單位各資料';
+            loadSheetData(currentSheet, rowData[1].trim());
+          }
+        });
+      });
+    }
+
+    function returnToPractice() {
+      isReturning = true;
+      currentSheet = '實習';
+      loadSheetData(currentSheet, $('#chefTypeFilter').val(), $('#regionFilter').val());
+    }
+  </script>
+</head>
+<body>
+  <div class="full-container">
+    <div class="filter-container" id="filterContainer">
+      <select id="chefTypeFilter" class="custom-filter">
+        <option value="">全部科系</option>
+        <option value="四技中廚系">四技中廚系</option>
+        <option value="四技西廚系">四技西廚系</option>
+        <option value="四技烘焙系">四技烘焙系</option>
+        <option value="四技餐管系">四技餐管系</option>
+        <option value="四技旅館系">四技旅館系</option>
+        <option value="四技行銷系">四技行銷系</option>
+        <option value="四技旅運系">四技旅運系</option>
+        <option value="四技休憩系">四技休憩系</option>
+        <option value="四技航運系">四技航運系</option>
+        <option value="四技應英系">四技應英系</option>
+        <option value="四技應日系">四技應日系</option>
+        <option value="四技國廚學程">四技國廚學程</option>
+        <option value="四技國觀學程">四技國觀學程</option>
+        <option value="二技餐管系">二技餐管系</option>
+        <option value="五專餐廚科">五專餐廚科</option>
+        <option value="(進)四技旅館系">(進)四技旅館系</option>
+        <option value="(進)四技餐管系">(進)四技餐管系</option>
+        <option value="(進)四技旅運系">(進)四技旅運系</option>
+        <option value="(進)四技航運系">(進)四技航運系</option>
+        <option value="(進)四技行銷系">(進)四技行銷系</option>
+        <option value="(進)二技餐管系">(進)二技餐管系</option>
+      </select>
+      <select id="regionFilter" class="custom-filter">
+        <option value="">全部地區</option>
+        <option value="南部">南部</option>
+        <option value="中部">中部</option>
+        <option value="東部">東部</option>
+        <option value="北部">北部</option>
+        <option value="國外">國外</option>
+      </select>
+    </div>
+    <div class="returnButtonContainer">
+      <button class="returnButton" onclick="returnToPractice()">返回</button>
+    </div>
+    <div id="selectedDataInfo"></div>
+    <div id="demo"></div>
+  </div>
+</body>
+</html>
